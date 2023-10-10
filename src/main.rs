@@ -2,8 +2,8 @@ use bevy::prelude::*;
 use bevy_rapier3d::prelude::*;
 use object::GameObject;
 
-mod object;
 mod maze;
+mod object;
 
 fn main() {
     App::new()
