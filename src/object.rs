@@ -104,7 +104,7 @@ impl Mesh {
                 width,
                 height,
                 depth,
-            } => Collider::cuboid(width, height, depth),
+            } => Collider::cuboid(width / 2.0, height / 2.0, depth / 2.0),
             Shape::Cylinder { radius, height } => Collider::cylinder(height / 2.0, radius),
             Shape::Sphere { radius } => Collider::ball(radius),
         }

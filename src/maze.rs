@@ -1,3 +1,7 @@
+use bevy::prelude::{Color, Quat, Vec3};
+
+use crate::object::{GameObject, Mesh, Shape};
+
 /// This is essentially a graph, with the nodes being the intersections and the edges being the paths between them.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Maze {
@@ -110,11 +114,26 @@ impl Maze {
                 }
             }
 
-            if !start_intersection_exists {
-                intersections.push(Intersection::new(start.clone()));
-            }
-            if !end_intersection_exists {
-                intersections.push(Intersection::new(end.clone()));
+            // This is a little bit messy.
+            // This is because we want to add the start and end coordinates in the same order regardless of the direction of the path (since we support paths going 'the wrong way', meaning with a start greater than the end).
+            // Our unit tests check that changing the direction of the paths doesn't change the maze, so we have to output the intersections in the same order either way.
+            let add_start_if_necessary = |intersections: &mut Vec<Intersection>| {
+                if !start_intersection_exists {
+                    intersections.push(Intersection::new(start.clone()));
+                }
+            };
+            let add_end_if_necessary = |intersections: &mut Vec<Intersection>| {
+                if !end_intersection_exists {
+                    intersections.push(Intersection::new(end.clone()));
+                }
+            };
+            let is_going_forward = start.0 < end.0 || start.1 < end.1;
+            if is_going_forward {
+                add_start_if_necessary(&mut intersections);
+                add_end_if_necessary(&mut intersections);
+            } else {
+                add_end_if_necessary(&mut intersections);
+                add_start_if_necessary(&mut intersections);
             }
         }
 
@@ -218,7 +237,7 @@ mod test {
     use super::*;
 
     #[test]
-    fn create_maze() {
+    fn create_maze_simple() {
         let maze = Maze::new(&[((0.0, 1.0), (0.0, -1.0)), ((1.0, 0.0), (-1.0, 0.0))]);
         assert_eq!(
             maze.intersections,
@@ -265,5 +284,97 @@ mod test {
                 Intersection::with_paths(None, None, Some(Path::new(3, 1.0)), None, (1.0, -1.0)),
             ]
         );
+    }
+
+    #[test]
+    fn create_maze_backward_paths() {
+        let maze1 = Maze::new(&[((0.0, 1.0), (0.0, -1.0)), ((1.0, 0.0), (-1.0, 0.0))]);
+        let maze2 = Maze::new(&[((0.0, -1.0), (0.0, 1.0)), ((-1.0, 0.0), (1.0, 0.0))]);
+        assert_eq!(maze1, maze2);
+    }
+}
+
+impl Maze {
+    pub fn create_game_object(&self) -> GameObject {
+        const HALF_PATH_WIDTH: f32 = 1.0;
+        const PATH_THICKNESS: f32 = 0.01;
+        let mut meshes: Vec<Mesh> = Vec::new();
+        for intersection in &self.intersections {
+            let mut paths: Vec<Path> = Vec::new();
+            // By only considering the up and right paths, we simplify the logic a lot.
+            // Every path has two intersections, which have the path on opposite edges. Therefore every path will always be either an up or a right of some intersection.
+            if let Some(path) = &intersection.right {
+                paths.push(path.clone());
+            }
+            if let Some(path) = &intersection.forward {
+                paths.push(path.clone());
+            }
+            for path in paths {
+                let target_intersection = &self.intersections[path.end_index];
+                let is_horizontal = intersection.coordinates.1 == target_intersection.coordinates.1;
+                let width = if is_horizontal {
+                    target_intersection.coordinates.0
+                        - intersection.coordinates.0
+                        - 2.0 * HALF_PATH_WIDTH
+                } else {
+                    PATH_THICKNESS
+                };
+                let depth = if is_horizontal {
+                    PATH_THICKNESS
+                } else {
+                    target_intersection.coordinates.1
+                        - intersection.coordinates.1
+                        - 2.0 * HALF_PATH_WIDTH
+                };
+                // Its important to note that the positions are actually teh positions of the centers of the shapes, so we have to add half of the width and depth.
+                // The logic for horizontal and vertical paths turns out to be exactly the same for position1.
+                let position1 = Vec3::new(
+                    intersection.coordinates.0 + HALF_PATH_WIDTH,
+                    HALF_PATH_WIDTH,
+                    intersection.coordinates.1 + HALF_PATH_WIDTH,
+                ) + Vec3::new(width, 0.0, depth) / 2.0;
+                let position2 = if is_horizontal {
+                    Vec3::new(
+                        intersection.coordinates.0 + HALF_PATH_WIDTH,
+                        HALF_PATH_WIDTH,
+                        intersection.coordinates.1 - HALF_PATH_WIDTH,
+                    )
+                } else {
+                    Vec3::new(
+                        intersection.coordinates.0 - HALF_PATH_WIDTH,
+                        HALF_PATH_WIDTH,
+                        intersection.coordinates.1 + HALF_PATH_WIDTH,
+                    )
+                } + Vec3::new(width, 0.0, depth) / 2.0;
+                meshes.push(Mesh {
+                    position: position1,
+                    rotation: Quat::default(),
+                    color: Color::GRAY,
+                    shape: Shape::Box {
+                        width,
+                        height: HALF_PATH_WIDTH * 2.0,
+                        depth,
+                    },
+                });
+                meshes.push(Mesh {
+                    position: position2,
+                    rotation: Quat::default(),
+                    color: Color::GRAY,
+                    shape: Shape::Box {
+                        width,
+                        height: HALF_PATH_WIDTH * 2.0,
+                        depth,
+                    },
+                });
+            }
+        }
+        for mesh in &meshes {
+            println!("{:#?}\n{:#?}", mesh.shape, mesh.position);
+        }
+        let mut result = GameObject::default();
+        meshes.into_iter().for_each(|mesh| {
+            result.add_mesh(mesh);
+        });
+        result
     }
 }

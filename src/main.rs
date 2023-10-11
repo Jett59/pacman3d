@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 use bevy_rapier3d::prelude::*;
+use maze::Maze;
 use object::GameObject;
 
 mod maze;
@@ -45,7 +46,7 @@ fn setup_graphics(
         rotation: Default::default(),
     });
     ground.spawn(
-        Transform::from_xyz(0.0, -2.0, 0.0),
+        Transform::default(),
         RigidBody::Fixed,
         &mut commands,
         &mut meshes,
@@ -54,22 +55,36 @@ fn setup_graphics(
 
     let mut object = GameObject::default();
     object.add_mesh(object::Mesh {
-        shape: object::Shape::Sphere { radius: 0.5 },
+        shape: object::Shape::Box {
+            width: 0.5,
+            height: 1.0,
+            depth: 0.5,
+        },
         color: Color::BLUE,
         position: Default::default(),
         rotation: Default::default(),
     });
     object
         .spawn(
-            Transform::from_xyz(0.0, 10.0, 0.0),
+            Transform::from_xyz(0.0, 1.0, 0.0),
             RigidBody::Dynamic,
             &mut commands,
             &mut meshes,
             &mut materials,
         )
         .insert(Player)
-        .insert(LockedAxes::ROTATION_LOCKED_X | LockedAxes::ROTATION_LOCKED_Z)
+        .insert(LockedAxes::ROTATION_LOCKED)
         .add_child(camera);
+
+    let maze = Maze::new(&[((-10.0, 0.0), (10.0, 0.0)), ((0.0, -10.0), (0.0, 10.0))]);
+    println!("Maze: {:?}", maze);
+    maze.create_game_object().spawn(
+        Default::default(),
+        RigidBody::Fixed,
+        &mut commands,
+        &mut meshes,
+        &mut materials,
+    );
 }
 
 fn player_movement(
