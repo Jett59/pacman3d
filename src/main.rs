@@ -1,3 +1,5 @@
+use std::f32::consts::PI;
+
 use bevy::prelude::*;
 use bevy_rapier3d::prelude::*;
 use maze::Maze;
@@ -77,7 +79,6 @@ fn setup_graphics(
         .add_child(camera);
 
     let maze = Maze::new(&[((-10.0, 0.0), (10.0, 0.0)), ((0.0, -10.0), (0.0, 10.0))]);
-    println!("Maze: {:?}", maze);
     maze.create_game_object().spawn(
         Default::default(),
         RigidBody::Fixed,
@@ -88,14 +89,9 @@ fn setup_graphics(
 }
 
 fn player_movement(
-    mut player: Query<(&mut Velocity, &Transform), With<Player>>,
+    mut player: Query<(&mut Velocity, &mut Transform), With<Player>>,
     keyboard_input: Res<Input<KeyCode>>,
 ) {
-    if keyboard_input.just_pressed(KeyCode::Space) {
-        for (mut velocity, _) in player.iter_mut() {
-            velocity.linvel += Vec3::Y * 10.0;
-        }
-    }
     const SPEED: f32 = 3.0;
     let x_velocity = if keyboard_input.pressed(KeyCode::Left) {
         -SPEED
@@ -114,5 +110,22 @@ fn player_movement(
     for (mut velocity, _) in player.iter_mut() {
         velocity.linvel.x = x_velocity;
         velocity.linvel.z = z_velocity;
+    }
+
+    let rotation = if keyboard_input.pressed(KeyCode::Left) {
+        Some(PI / 2.0)
+    } else if keyboard_input.pressed(KeyCode::Right) {
+        Some(-PI / 2.0)
+    } else if keyboard_input.pressed(KeyCode::Back) {
+        Some(PI)
+    } else if keyboard_input.pressed(KeyCode::Up) {
+        Some(0.0)
+    } else {
+        None
+    };
+    if let Some(rotation) = rotation {
+        for (_, mut transform) in player.iter_mut() {
+            transform.rotation = Quat::from_rotation_y(rotation);
+        }
     }
 }

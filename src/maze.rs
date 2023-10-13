@@ -76,12 +76,10 @@ impl Maze {
             // Because these paths are really edges in a graph, we actually need every path to be connected on both sides for it to register.
             let mut start_intersection_exists = intersections
                 .iter()
-                .find(|intersection| &intersection.coordinates == start)
-                .is_some();
+                .any(|intersection| &intersection.coordinates == start);
             let mut end_intersection_exists = intersections
                 .iter()
-                .find(|intersection| &intersection.coordinates == end)
-                .is_some();
+                .any(|intersection| &intersection.coordinates == end);
             // If we only check forward (i.e. we don't check paths covered in the outer loop), this will prevent us from checking the same pair of paths more than once.
             // We do this since it still covers all pairs, is a lot simpler and (hopefully) is faster to execute (although this isn't much of a concern).
             for other_path in paths.iter().skip(i + 1) {
@@ -119,12 +117,12 @@ impl Maze {
             // Our unit tests check that changing the direction of the paths doesn't change the maze, so we have to output the intersections in the same order either way.
             let add_start_if_necessary = |intersections: &mut Vec<Intersection>| {
                 if !start_intersection_exists {
-                    intersections.push(Intersection::new(start.clone()));
+                    intersections.push(Intersection::new(*start));
                 }
             };
             let add_end_if_necessary = |intersections: &mut Vec<Intersection>| {
                 if !end_intersection_exists {
-                    intersections.push(Intersection::new(end.clone()));
+                    intersections.push(Intersection::new(*end));
                 }
             };
             let is_going_forward = start.0 < end.0 || start.1 < end.1;
@@ -367,9 +365,6 @@ impl Maze {
                     },
                 });
             }
-        }
-        for mesh in &meshes {
-            println!("{:#?}\n{:#?}", mesh.shape, mesh.position);
         }
         let mut result = GameObject::default();
         meshes.into_iter().for_each(|mesh| {
