@@ -365,6 +365,63 @@ impl Maze {
                     },
                 });
             }
+            let mut missing_path_position_width_depth = Vec::new();
+            if intersection.left.is_none() {
+                missing_path_position_width_depth.push((
+                    Vec3::new(
+                        intersection.coordinates.0 - HALF_PATH_WIDTH,
+                        HALF_PATH_WIDTH,
+                        intersection.coordinates.1,
+                    ),
+                    PATH_THICKNESS,
+                    HALF_PATH_WIDTH * 2.0,
+                ));
+            }
+            if intersection.right.is_none() {
+                missing_path_position_width_depth.push((
+                    Vec3::new(
+                        intersection.coordinates.0 + HALF_PATH_WIDTH,
+                        HALF_PATH_WIDTH,
+                        intersection.coordinates.1,
+                    ),
+                    PATH_THICKNESS,
+                    HALF_PATH_WIDTH * 2.0,
+                ));
+            }
+            if intersection.forward.is_none() {
+                missing_path_position_width_depth.push((
+                    Vec3::new(
+                        intersection.coordinates.0,
+                        HALF_PATH_WIDTH,
+                        intersection.coordinates.1 + HALF_PATH_WIDTH,
+                    ),
+                    HALF_PATH_WIDTH * 2.0,
+                    PATH_THICKNESS,
+                ));
+            }
+            if intersection.backward.is_none() {
+                missing_path_position_width_depth.push((
+                    Vec3::new(
+                        intersection.coordinates.0,
+                        HALF_PATH_WIDTH,
+                        intersection.coordinates.1 - HALF_PATH_WIDTH,
+                    ),
+                    HALF_PATH_WIDTH * 2.0,
+                    PATH_THICKNESS,
+                ));
+            }
+            for (position, width, depth) in missing_path_position_width_depth {
+                meshes.push(Mesh {
+                    position,
+                    rotation: Quat::default(),
+                    color: Color::GRAY,
+                    shape: Shape::Box {
+                        width,
+                        height: HALF_PATH_WIDTH * 2.0,
+                        depth,
+                    },
+                });
+            }
         }
         let mut result = GameObject::default();
         meshes.into_iter().for_each(|mesh| {

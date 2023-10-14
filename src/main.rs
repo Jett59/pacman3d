@@ -78,7 +78,14 @@ fn setup_graphics(
         .insert(LockedAxes::ROTATION_LOCKED)
         .add_child(camera);
 
-    let maze = Maze::new(&[((-10.0, 0.0), (10.0, 0.0)), ((0.0, -10.0), (0.0, 10.0))]);
+    let maze = Maze::new(&[
+        ((-10.0, 0.0), (10.0, 0.0)),
+        ((0.0, -10.0), (0.0, 10.0)),
+        ((-10.0, 10.0), (10.0, 10.0)),
+        ((-10.0, -10.0), (10.0, -10.0)),
+        ((10.0, -10.0), (10.0, 10.0)),
+        ((-10.0, -10.0), (-10.0, 10.0)),
+    ]);
     maze.create_game_object().spawn(
         Default::default(),
         RigidBody::Fixed,
@@ -116,7 +123,7 @@ fn player_movement(
         Some(PI / 2.0)
     } else if keyboard_input.pressed(KeyCode::Right) {
         Some(-PI / 2.0)
-    } else if keyboard_input.pressed(KeyCode::Back) {
+    } else if keyboard_input.pressed(KeyCode::Down) {
         Some(PI)
     } else if keyboard_input.pressed(KeyCode::Up) {
         Some(0.0)
