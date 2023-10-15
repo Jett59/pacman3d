@@ -17,11 +17,73 @@ fn main() {
         .run();
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+enum Direction {
+    Left,
+    Right,
+    #[default]
+    Forward,
+    Backward,
+}
+
+impl Direction {
+    fn x_velocity(&self) -> f32 {
+        match self {
+            Direction::Left => -1.0,
+            Direction::Right => 1.0,
+            _ => 0.0,
+        }
+    }
+
+    fn z_velocity(&self) -> f32 {
+        match self {
+            Direction::Forward => -1.0,
+            Direction::Backward => 1.0,
+            _ => 0.0,
+        }
+    }
+
+    fn get_rotation(&self) -> Quat {
+        match self {
+            Direction::Forward => Quat::from_rotation_y(0.0),
+            Direction::Left => Quat::from_rotation_y(PI / 2.0),
+            Direction::Backward => Quat::from_rotation_y(PI),
+            Direction::Right => Quat::from_rotation_y(PI * 1.5),
+        }
+    }
+
+    fn rotate_left(&self) -> Self {
+        match self {
+            Direction::Forward => Direction::Left,
+            Direction::Left => Direction::Backward,
+            Direction::Backward => Direction::Right,
+            Direction::Right => Direction::Forward,
+        }
+    }
+
+    fn rotate_right(&self) -> Self {
+        match self {
+            Direction::Forward => Direction::Right,
+            Direction::Right => Direction::Backward,
+            Direction::Backward => Direction::Left,
+            Direction::Left => Direction::Forward,
+        }
+    }
+
+    fn rotate_backward(&self) -> Self {
+        match self {
+            Direction::Forward => Direction::Backward,
+            Direction::Backward => Direction::Forward,
+            Direction::Left => Direction::Right,
+            Direction::Right => Direction::Left,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, Component)]
 struct Player {
-    // I couldn't find a way to get rapier to stop decreasing the velocity, so we need to keep track of what it should be and reset it every frame.
-    x_velocity: f32,
-    z_velocity: f32,
+    current_direction: Direction,
+    queued_direction: Option<Direction>,
 }
 
 fn setup_graphics(
@@ -119,51 +181,33 @@ fn player_movement(
     rapier_context: Res<RapierContext>,
 ) {
     for (mut player, mut velocity, mut transform, entity) in player.iter_mut() {
-        if let Some(_intersection) = rapier_context.intersections_with(entity).next() {
-            const SPEED: f32 = 3.0;
-            let mut x_velocity = if keyboard_input.just_pressed(KeyCode::Left) {
-                Some(-SPEED)
-            } else if keyboard_input.just_pressed(KeyCode::Right) {
-                Some(SPEED)
-            } else {
-                None
-            };
-            let mut z_velocity = if keyboard_input.just_pressed(KeyCode::Up) {
-                Some(-SPEED)
-            } else if keyboard_input.just_pressed(KeyCode::Down) {
-                Some(SPEED)
-            } else {
-                None
-            };
-            if x_velocity.is_some() {
-                z_velocity = Some(0.0);
-            } else if z_velocity.is_some() {
-                x_velocity = Some(0.0);
-            }
-            let x_velocity = x_velocity.unwrap_or(player.x_velocity);
-            let z_velocity = z_velocity.unwrap_or(player.z_velocity);
-            player.x_velocity = x_velocity;
-            player.z_velocity = z_velocity;
-            velocity.linvel.x = x_velocity;
-            velocity.linvel.z = z_velocity;
-
-            let rotation = if keyboard_input.just_pressed(KeyCode::Left) {
-                Some(PI / 2.0)
-            } else if keyboard_input.just_pressed(KeyCode::Right) {
-                Some(-PI / 2.0)
-            } else if keyboard_input.just_pressed(KeyCode::Down) {
-                Some(PI)
-            } else if keyboard_input.just_pressed(KeyCode::Up) {
-                Some(0.0)
-            } else {
-                None
-            };
-            if let Some(rotation) = rotation {
-                transform.rotation = Quat::from_rotation_y(rotation);
-            }
-        } else {
-            velocity.linvel.x = player.x_velocity;
-            velocity.linvel.z = player.z_velocity;
+        if keyboard_input.just_pressed(KeyCode::Down) {
+            player.current_direction = player.current_direction.rotate_backward();
         }
+        let is_at_intersection = rapier_context.intersections_with(entity).next().is_some();
+        if keyboard_input.just_pressed(KeyCode::Left) {
+            if is_at_intersection {
+                player.current_direction = player.current_direction.rotate_left();
+            } else {
+                player.queued_direction = Some(player.current_direction.rotate_left());
+            }
+        }
+        if keyboard_input.just_pressed(KeyCode::Right) {
+            if is_at_intersection {
+                player.current_direction = player.current_direction.rotate_right();
+            } else {
+                player.queued_direction = Some(player.current_direction.rotate_right());
+            }
+        }
+        if is_at_intersection {
+            if let Some(queued_direction) = player.queued_direction {
+                player.current_direction = queued_direction;
+                player.queued_direction = None;
+            }
+        }
+        const SPEED: f32 = 3.0;
+        velocity.linvel.x = player.current_direction.x_velocity() * SPEED;
+        velocity.linvel.z = player.current_direction.z_velocity() * SPEED;
+        transform.rotation = player.current_direction.get_rotation();
     }
 }
