@@ -292,10 +292,11 @@ mod test {
     }
 }
 
+pub const HALF_PATH_WIDTH: f32 = 1.0;
+        pub const PATH_THICKNESS: f32 = 0.01;
+
 impl Maze {
     pub fn create_game_object(&self) -> GameObject {
-        const HALF_PATH_WIDTH: f32 = 1.0;
-        const PATH_THICKNESS: f32 = 0.01;
         let mut meshes: Vec<Mesh> = Vec::new();
         for intersection in &self.intersections {
             let mut paths: Vec<Path> = Vec::new();

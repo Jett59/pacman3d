@@ -2,7 +2,7 @@ use std::f32::consts::PI;
 
 use bevy::prelude::*;
 use bevy_rapier3d::prelude::*;
-use maze::Maze;
+use maze::{Maze, HALF_PATH_WIDTH};
 use object::GameObject;
 
 mod maze;
@@ -17,8 +17,12 @@ fn main() {
         .run();
 }
 
-#[derive(Component)]
-struct Player;
+#[derive(Clone, Debug, Default, Component)]
+struct Player {
+    // I couldn't find a way to get rapier to stop decreasing the velocity, so we need to keep track of what it should be and reset it every frame.
+    x_velocity: f32,
+    z_velocity: f32,
+}
 
 fn setup_graphics(
     mut commands: Commands,
@@ -55,18 +59,19 @@ fn setup_graphics(
         &mut materials,
     );
 
-    let mut object = GameObject::default();
-    object.add_mesh(object::Mesh {
-        shape: object::Shape::Box {
-            width: 0.5,
+    const PLAYER_RADIUS: f32 = 0.25;
+
+    let mut player = GameObject::default();
+    player.add_mesh(object::Mesh {
+        shape: object::Shape::Cylinder {
+            radius: PLAYER_RADIUS,
             height: 1.0,
-            depth: 0.5,
         },
         color: Color::BLUE,
         position: Default::default(),
         rotation: Default::default(),
     });
-    object
+    player
         .spawn(
             Transform::from_xyz(0.0, 1.0, 0.0),
             RigidBody::Dynamic,
@@ -74,7 +79,7 @@ fn setup_graphics(
             &mut meshes,
             &mut materials,
         )
-        .insert(Player)
+        .insert(Player::default())
         .insert(LockedAxes::ROTATION_LOCKED)
         .add_child(camera);
 
@@ -93,46 +98,72 @@ fn setup_graphics(
         &mut meshes,
         &mut materials,
     );
+
+    // We need to detect when the player is intersecting with an intersection, since they can only move when this is the case.
+    for intersection in maze.intersections() {
+        commands
+            .spawn(Collider::ball(HALF_PATH_WIDTH - PLAYER_RADIUS * 2.0))
+            .insert(Sensor)
+            .insert(Transform::from_xyz(
+                intersection.coordinates.0,
+                0.0,
+                intersection.coordinates.1,
+            ))
+            .insert(GlobalTransform::default());
+    }
 }
 
 fn player_movement(
-    mut player: Query<(&mut Velocity, &mut Transform), With<Player>>,
+    mut player: Query<(&mut Player, &mut Velocity, &mut Transform, Entity)>,
     keyboard_input: Res<Input<KeyCode>>,
+    rapier_context: Res<RapierContext>,
 ) {
-    const SPEED: f32 = 3.0;
-    let x_velocity = if keyboard_input.pressed(KeyCode::Left) {
-        -SPEED
-    } else if keyboard_input.pressed(KeyCode::Right) {
-        SPEED
-    } else {
-        0.0
-    };
-    let z_velocity = if keyboard_input.pressed(KeyCode::Up) {
-        -SPEED
-    } else if keyboard_input.pressed(KeyCode::Down) {
-        SPEED
-    } else {
-        0.0
-    };
-    for (mut velocity, _) in player.iter_mut() {
-        velocity.linvel.x = x_velocity;
-        velocity.linvel.z = z_velocity;
-    }
+    for (mut player, mut velocity, mut transform, entity) in player.iter_mut() {
+        if let Some(_intersection) = rapier_context.intersections_with(entity).next() {
+            const SPEED: f32 = 3.0;
+            let mut x_velocity = if keyboard_input.just_pressed(KeyCode::Left) {
+                Some(-SPEED)
+            } else if keyboard_input.just_pressed(KeyCode::Right) {
+                Some(SPEED)
+            } else {
+                None
+            };
+            let mut z_velocity = if keyboard_input.just_pressed(KeyCode::Up) {
+                Some(-SPEED)
+            } else if keyboard_input.just_pressed(KeyCode::Down) {
+                Some(SPEED)
+            } else {
+                None
+            };
+            if x_velocity.is_some() {
+                z_velocity = Some(0.0);
+            } else if z_velocity.is_some() {
+                x_velocity = Some(0.0);
+            }
+            let x_velocity = x_velocity.unwrap_or(player.x_velocity);
+            let z_velocity = z_velocity.unwrap_or(player.z_velocity);
+            player.x_velocity = x_velocity;
+            player.z_velocity = z_velocity;
+            velocity.linvel.x = x_velocity;
+            velocity.linvel.z = z_velocity;
 
-    let rotation = if keyboard_input.pressed(KeyCode::Left) {
-        Some(PI / 2.0)
-    } else if keyboard_input.pressed(KeyCode::Right) {
-        Some(-PI / 2.0)
-    } else if keyboard_input.pressed(KeyCode::Down) {
-        Some(PI)
-    } else if keyboard_input.pressed(KeyCode::Up) {
-        Some(0.0)
-    } else {
-        None
-    };
-    if let Some(rotation) = rotation {
-        for (_, mut transform) in player.iter_mut() {
-            transform.rotation = Quat::from_rotation_y(rotation);
+            let rotation = if keyboard_input.just_pressed(KeyCode::Left) {
+                Some(PI / 2.0)
+            } else if keyboard_input.just_pressed(KeyCode::Right) {
+                Some(-PI / 2.0)
+            } else if keyboard_input.just_pressed(KeyCode::Down) {
+                Some(PI)
+            } else if keyboard_input.just_pressed(KeyCode::Up) {
+                Some(0.0)
+            } else {
+                None
+            };
+            if let Some(rotation) = rotation {
+                transform.rotation = Quat::from_rotation_y(rotation);
+            }
+        } else {
+            velocity.linvel.x = player.x_velocity;
+            velocity.linvel.z = player.z_velocity;
         }
     }
 }
