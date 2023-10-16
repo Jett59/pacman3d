@@ -108,7 +108,9 @@ impl Maze {
                     if &intersection.coordinates == end {
                         end_intersection_exists = true;
                     }
-                    intersections.push(intersection);
+                    if !intersections.contains(&intersection) {
+                        intersections.push(intersection);
+                    }
                 }
             }
 
@@ -207,18 +209,18 @@ impl Maze {
 
                 if is_moving_forward {
                     if is_horizontal {
-                        intersection.left = path_to_previous;
-                        intersection.right = path_to_next;
+                        intersection.left = intersection.left.clone().or(path_to_previous);
+                        intersection.right = intersection.right.clone().or(path_to_next);
                     } else {
-                        intersection.backward = path_to_previous;
-                        intersection.forward = path_to_next;
+                        intersection.backward = intersection.backward.clone().or(path_to_previous);
+                        intersection.forward = intersection.forward.clone().or(path_to_next);
                     }
                 } else if is_horizontal {
-                    intersection.right = path_to_previous;
-                    intersection.left = path_to_next;
+                    intersection.left = intersection.left.clone().or(path_to_next);
+                    intersection.right = intersection.right.clone().or(path_to_previous);
                 } else {
-                    intersection.forward = path_to_previous;
-                    intersection.backward = path_to_next;
+                    intersection.backward = intersection.backward.clone().or(path_to_next);
+                    intersection.forward = intersection.forward.clone().or(path_to_previous);
                 }
             }
         }
@@ -241,16 +243,16 @@ mod test {
             maze.intersections,
             vec![
                 Intersection::with_paths(
-                    Some(Path::new(4, 1.0)),
                     Some(Path::new(3, 1.0)),
-                    Some(Path::new(1, 1.0)),
+                    Some(Path::new(4, 1.0)),
                     Some(Path::new(2, 1.0)),
+                    Some(Path::new(1, 1.0)),
                     (0.0, 0.0)
                 ),
-                Intersection::with_paths(None, None, None, Some(Path::new(0, 1.0)), (0.0, 1.0)),
                 Intersection::with_paths(None, None, Some(Path::new(0, 1.0)), None, (0.0, -1.0)),
-                Intersection::with_paths(Some(Path::new(0, 1.0)), None, None, None, (1.0, 0.0)),
+                Intersection::with_paths(None, None, None, Some(Path::new(0, 1.0)), (0.0, 1.0)),
                 Intersection::with_paths(None, Some(Path::new(0, 1.0)), None, None, (-1.0, 0.0)),
+                Intersection::with_paths(Some(Path::new(0, 1.0)), None, None, None, (1.0, 0.0)),
             ]
         );
         let maze = Maze::new(&[
@@ -264,24 +266,35 @@ mod test {
                 Intersection::with_paths(
                     Some(Path::new(4, 1.0)),
                     Some(Path::new(3, 1.0)),
-                    Some(Path::new(1, 1.0)),
                     Some(Path::new(2, 1.0)),
+                    Some(Path::new(1, 1.0)),
                     (0.0, 0.0)
                 ),
-                Intersection::with_paths(None, None, None, Some(Path::new(0, 1.0)), (0.0, 1.0)),
                 Intersection::with_paths(None, None, Some(Path::new(0, 1.0)), None, (0.0, -1.0)),
+                Intersection::with_paths(None, None, None, Some(Path::new(0, 1.0)), (0.0, 1.0)),
                 Intersection::with_paths(
                     Some(Path::new(0, 1.0)),
                     None,
-                    Some(Path::new(5, 1.0)),
                     Some(Path::new(6, 1.0)),
+                    Some(Path::new(5, 1.0)),
                     (1.0, 0.0)
                 ),
                 Intersection::with_paths(None, Some(Path::new(0, 1.0)), None, None, (-1.0, 0.0)),
-                Intersection::with_paths(None, None, None, Some(Path::new(3, 1.0)), (1.0, 1.0)),
                 Intersection::with_paths(None, None, Some(Path::new(3, 1.0)), None, (1.0, -1.0)),
+                Intersection::with_paths(None, None, None, Some(Path::new(3, 1.0)), (1.0, 1.0)),
             ]
         );
+    }
+
+    #[test]
+    fn create_maze_complex_intersections() {
+        let maze1 = Maze::new(&[((0.0, 1.0), (0.0, -1.0)), ((1.0, 0.0), (-1.0, 0.0))]);
+        let maze2 = Maze::new(&[
+            ((0.0, 0.0), (0.0, -1.0)),
+            ((0.0, 1.0), (0.0, 0.0)),
+            ((1.0, 0.0), (-1.0, 0.0)),
+        ]);
+        assert_eq!(maze1, maze2);
     }
 
     #[test]
@@ -293,7 +306,7 @@ mod test {
 }
 
 pub const HALF_PATH_WIDTH: f32 = 1.0;
-        pub const PATH_THICKNESS: f32 = 0.01;
+pub const PATH_THICKNESS: f32 = 0.01;
 
 impl Maze {
     pub fn create_game_object(&self) -> GameObject {
