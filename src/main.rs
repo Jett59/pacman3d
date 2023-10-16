@@ -2,7 +2,7 @@ use std::f32::consts::PI;
 
 use bevy::prelude::*;
 use bevy_rapier3d::prelude::*;
-use maze::{Maze, HALF_PATH_WIDTH};
+use maze::{Intersection, Maze, Path, HALF_PATH_WIDTH};
 use object::GameObject;
 
 mod maze;
@@ -78,6 +78,18 @@ impl Direction {
             Direction::Right => Direction::Left,
         }
     }
+
+    fn intersection_path<'a>(&self, intersection: &'a Intersection) -> &'a Option<Path> {
+        // The catch here is that our notion of forward is the opposite of the intersection's.
+        // We say forward is the negative z direction (which is how Bevy does it).
+        // The intersection says forward is the positive y direction though, so this may look a bit strange.
+        match self {
+            Direction::Forward => &intersection.backward,
+            Direction::Backward => &intersection.forward,
+            Direction::Left => &intersection.left,
+            Direction::Right => &intersection.right,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, Component)]
@@ -85,6 +97,9 @@ struct Player {
     current_direction: Direction,
     queued_direction: Option<Direction>,
 }
+
+#[derive(Component)]
+struct IntersectionComponent(pub Intersection);
 
 fn setup_graphics(
     mut commands: Commands,
@@ -171,7 +186,6 @@ fn setup_graphics(
         ((-15.0, 5.0), (-15.0, -5.0)),
         ((15.0, 5.0), (15.0, -5.0)),
     ]);
-    println!("{:#?}", maze);
     maze.create_game_object().spawn(
         Default::default(),
         RigidBody::Fixed,
@@ -183,19 +197,29 @@ fn setup_graphics(
     // We need to detect when the player is intersecting with an intersection, since they can only move when this is the case.
     for intersection in maze.intersections() {
         commands
-            .spawn(Collider::ball(HALF_PATH_WIDTH - PLAYER_RADIUS * 2.0))
+            .spawn(Collider::ball(HALF_PATH_WIDTH))
             .insert(Sensor)
             .insert(Transform::from_xyz(
                 intersection.coordinates.0,
                 0.0,
                 intersection.coordinates.1,
             ))
-            .insert(GlobalTransform::default());
+            .insert(GlobalTransform::default())
+            .insert(IntersectionComponent(intersection.clone()));
     }
 }
 
+fn can_go_that_way(intersection: &Intersection, direction: Direction) -> bool {
+    direction.intersection_path(intersection).is_some()
+}
+
+#[allow(clippy::type_complexity)]
 fn player_movement(
     mut player: Query<(&mut Player, &mut Velocity, &mut Transform, Entity)>,
+    intersections: Query<
+        (&IntersectionComponent, Entity),
+        (With<IntersectionComponent>, Without<Player>),
+    >,
     keyboard_input: Res<Input<KeyCode>>,
     rapier_context: Res<RapierContext>,
 ) {
@@ -203,25 +227,49 @@ fn player_movement(
         if keyboard_input.just_pressed(KeyCode::Down) {
             player.current_direction = player.current_direction.rotate_backward();
         }
-        let is_at_intersection = rapier_context.intersections_with(entity).next().is_some();
+        let current_intersection = intersections
+            .iter()
+            .filter(|(_, intersection_entity)| {
+                rapier_context
+                    .intersection_pair(entity, *intersection_entity)
+                    .unwrap_or(false)
+            })
+            .map(|(intersection, _)| intersection.0.clone())
+            .next();
         if keyboard_input.just_pressed(KeyCode::Left) {
-            if is_at_intersection {
-                player.current_direction = player.current_direction.rotate_left();
+            let new_direction = player.current_direction.rotate_left();
+            if let Some(current_intersection) = current_intersection
+                .as_ref()
+                .filter(|intersection| can_go_that_way(intersection, new_direction))
+            {
+                player.current_direction = new_direction;
+                transform.translation.x = current_intersection.coordinates.0;
+                transform.translation.z = current_intersection.coordinates.1;
             } else {
-                player.queued_direction = Some(player.current_direction.rotate_left());
+                player.queued_direction = Some(new_direction);
             }
         }
         if keyboard_input.just_pressed(KeyCode::Right) {
-            if is_at_intersection {
-                player.current_direction = player.current_direction.rotate_right();
+            let new_direction = player.current_direction.rotate_right();
+            if let Some(current_intersection) = current_intersection
+                .as_ref()
+                .filter(|intersection| can_go_that_way(intersection, new_direction))
+            {
+                player.current_direction = new_direction;
+                transform.translation.x = current_intersection.coordinates.0;
+                transform.translation.z = current_intersection.coordinates.1;
             } else {
-                player.queued_direction = Some(player.current_direction.rotate_right());
+                player.queued_direction = Some(new_direction);
             }
         }
-        if is_at_intersection {
+        if let Some(current_intersection) = &current_intersection {
             if let Some(queued_direction) = player.queued_direction {
-                player.current_direction = queued_direction;
-                player.queued_direction = None;
+                if can_go_that_way(current_intersection, queued_direction) {
+                    player.current_direction = queued_direction;
+                    player.queued_direction = None;
+                    transform.translation.x = current_intersection.coordinates.0;
+                    transform.translation.z = current_intersection.coordinates.1;
+                }
             }
         }
         const SPEED: f32 = 3.0;
