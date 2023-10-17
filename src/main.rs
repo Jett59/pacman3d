@@ -2,9 +2,13 @@ use std::f32::consts::PI;
 
 use bevy::prelude::*;
 use bevy_rapier3d::prelude::*;
+use ghost::ghost_movement;
 use maze::{Intersection, Maze, Path, HALF_PATH_WIDTH};
 use object::GameObject;
 
+use crate::ghost::create_ghost;
+
+mod ghost;
 mod maze;
 mod object;
 
@@ -13,7 +17,7 @@ fn main() {
         .add_plugins(DefaultPlugins)
         .add_plugins(RapierPhysicsPlugin::<NoUserData>::default())
         .add_systems(Startup, setup_graphics)
-        .add_systems(Update, player_movement)
+        .add_systems(Update, (player_movement, ghost_movement))
         .run();
 }
 
@@ -93,7 +97,7 @@ impl Direction {
 }
 
 #[derive(Clone, Debug, Default, Component)]
-struct Player {
+pub struct Player {
     current_direction: Direction,
     queued_direction: Option<Direction>,
 }
@@ -136,7 +140,7 @@ fn setup_graphics(
         &mut materials,
     );
 
-    const PLAYER_RADIUS: f32 = 0.25;
+    const PLAYER_RADIUS: f32 = HALF_PATH_WIDTH - 0.1;
 
     let mut player = GameObject::default();
     player.add_mesh(object::Mesh {
@@ -207,6 +211,15 @@ fn setup_graphics(
             .insert(GlobalTransform::default())
             .insert(IntersectionComponent(intersection.clone()));
     }
+
+    commands.insert_resource(maze);
+
+    create_ghost(
+        &mut commands,
+        &mut meshes,
+        &mut materials,
+        Vec3::new(5.0, HALF_PATH_WIDTH, 20.0),
+    );
 }
 
 fn can_go_that_way(intersection: &Intersection, direction: Direction) -> bool {

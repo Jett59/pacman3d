@@ -1,9 +1,9 @@
-use bevy::prelude::{Color, Quat, Vec3};
+use bevy::prelude::{Color, Quat, Resource, Vec3};
 
 use crate::object::{GameObject, Mesh, Shape};
 
 /// This is essentially a graph, with the nodes being the intersections and the edges being the paths between them.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Resource)]
 pub struct Maze {
     intersections: Vec<Intersection>,
 }
@@ -305,7 +305,7 @@ mod test {
     }
 }
 
-pub const HALF_PATH_WIDTH: f32 = 1.0;
+pub const HALF_PATH_WIDTH: f32 = 0.5;
 pub const PATH_THICKNESS: f32 = 0.01;
 
 impl Maze {
