@@ -2,11 +2,11 @@ use std::f32::consts::PI;
 
 use bevy::prelude::*;
 use bevy_rapier3d::prelude::*;
-use ghost::ghost_movement;
+use ghost::{ghost_movement, Ghost};
 use maze::{Intersection, Maze, Path, HALF_PATH_WIDTH};
-use object::GameObject;
+use object::{GameObject, MeshComponent};
 
-use crate::ghost::create_ghost;
+use crate::ghost::{create_ghost, GhostType};
 
 mod ghost;
 mod maze;
@@ -219,12 +219,21 @@ fn setup_graphics(
         &mut meshes,
         &mut materials,
         Vec3::new(5.0, HALF_PATH_WIDTH, 20.0),
+        GhostType::Blinky,
     );
     create_ghost(
         &mut commands,
         &mut meshes,
         &mut materials,
         Vec3::new(-5.0, HALF_PATH_WIDTH, 20.0),
+        GhostType::Pinky,
+    );
+    create_ghost(
+        &mut commands,
+        &mut meshes,
+        &mut materials,
+        Vec3::new(5.0, HALF_PATH_WIDTH, 20.0),
+        GhostType::Blinky,
     );
 }
 
@@ -298,4 +307,45 @@ fn player_movement(
     }
 }
 
-fn death(player: Query<Entity, With<Player>>) {}
+#[derive(Resource)]
+struct DeathTimer(Timer);
+
+#[allow(clippy::too_many_arguments)]
+fn death(
+    player: Query<Entity, With<Player>>,
+    ghosts: Query<Entity, With<Ghost>>,
+    // While this falls somewhat short of "everything", we don't actually want to destroy *literally* everything.
+    // What we really want to do is to remove all game objects and the camera.
+    everything: Query<Entity, AnyOf<(With<Camera>, With<GameObject>, With<MeshComponent>)>>,
+    mut commands: Commands,
+    death_timer: Option<ResMut<DeathTimer>>,
+    time: Res<Time>,
+    rapier_context: Res<RapierContext>,
+    // Other things we need to provide to call the startup system.
+    meshes: ResMut<Assets<Mesh>>,
+    materials: ResMut<Assets<StandardMaterial>>,
+) {
+    if let Some(mut death_timer) = death_timer {
+        if death_timer.0.tick(time.delta()).just_finished() {
+            // This is when we restart the game.
+            commands.remove_resource::<DeathTimer>();
+            setup_graphics(commands, meshes, materials);
+        }
+    } else {
+        // What we want to do is to check if the player is intersecting with any ghosts.
+        // If they are, we go and delete everything and set up the timer.
+        let player_entity = player.iter().next().expect("Player not found");
+        if ghosts.iter().any(|ghost_entity| {
+            rapier_context
+                .contact_pair(ghost_entity, player_entity)
+                .map(|contact| contact.has_any_active_contacts())
+                .unwrap_or(false)
+        }) {
+            // We need to delete everything.
+            for entity in everything.iter() {
+                commands.entity(entity).despawn();
+            }
+            commands.insert_resource(DeathTimer(Timer::from_seconds(3.0, TimerMode::Once)));
+        }
+    }
+}

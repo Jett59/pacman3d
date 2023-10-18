@@ -66,6 +66,9 @@ pub struct Mesh {
     pub rotation: Quat,
 }
 
+#[derive(Component)]
+pub struct MeshComponent;
+
 impl Mesh {
     fn to_entity<'w, 's, 'a>(
         &self,
@@ -73,29 +76,32 @@ impl Mesh {
         meshes: &mut ResMut<Assets<bevy::prelude::Mesh>>,
         materials: &mut ResMut<Assets<bevy::prelude::StandardMaterial>>,
     ) -> EntityCommands<'w, 's, 'a> {
-        commands.spawn(PbrBundle {
-            mesh: meshes.add(match self.shape {
-                Shape::Box {
-                    width,
-                    height,
-                    depth,
-                } => shape::Box::new(width, height, depth).into(),
-                Shape::Cylinder { radius, height } => shape::Cylinder {
-                    height,
-                    radius,
-                    ..Default::default()
-                }
-                .into(),
-                Shape::Sphere { radius } => shape::UVSphere {
-                    radius,
-                    ..Default::default()
-                }
-                .into(),
-            }),
-            material: materials.add(self.color.into()),
-            transform: Transform::from_translation(self.position).with_rotation(self.rotation),
-            ..Default::default()
-        })
+        commands.spawn((
+            MeshComponent,
+            PbrBundle {
+                mesh: meshes.add(match self.shape {
+                    Shape::Box {
+                        width,
+                        height,
+                        depth,
+                    } => shape::Box::new(width, height, depth).into(),
+                    Shape::Cylinder { radius, height } => shape::Cylinder {
+                        height,
+                        radius,
+                        ..Default::default()
+                    }
+                    .into(),
+                    Shape::Sphere { radius } => shape::UVSphere {
+                        radius,
+                        ..Default::default()
+                    }
+                    .into(),
+                }),
+                material: materials.add(self.color.into()),
+                transform: Transform::from_translation(self.position).with_rotation(self.rotation),
+                ..Default::default()
+            },
+        ))
     }
 
     fn get_collider(&self) -> Collider {

@@ -12,18 +12,32 @@ use crate::{
     Player,
 };
 
-#[derive(Clone, Debug, Default, Component)]
-pub struct Ghost;
+#[derive(Clone, Debug)]
+pub enum GhostType {
+    Blinky,
+    Pinky,
+    Inky,
+    Clyde,
+}
+
+#[derive(Clone, Debug, Component)]
+pub struct Ghost(pub GhostType);
 
 pub fn create_ghost(
     commands: &mut Commands,
     meshes: &mut ResMut<Assets<bevy::prelude::Mesh>>,
     materials: &mut ResMut<Assets<StandardMaterial>>,
     initial_position: Vec3,
+    ghost_type: GhostType,
 ) -> Entity {
     let mut game_object = GameObject::default();
     game_object.add_mesh(Mesh {
-        color: Color::BLUE,
+        color: match ghost_type {
+            GhostType::Blinky => Color::RED,
+            GhostType::Pinky => Color::PINK,
+            GhostType::Inky => Color::CYAN,
+            GhostType::Clyde => Color::ORANGE,
+        },
         position: Vec3::default(),
         rotation: Quat::default(),
         shape: Shape::Cylinder {
@@ -39,7 +53,7 @@ pub fn create_ghost(
             meshes,
             materials,
         )
-        .insert(Ghost)
+        .insert(Ghost(ghost_type))
         .insert(LockedAxes::ROTATION_LOCKED)
         .id()
 }
@@ -121,8 +135,6 @@ pub fn find_shortest_path(
     current_ghost_position: (f32, f32),
     maze: &Maze,
 ) -> Vec<usize> {
-    println!("player position: {:?}", player_position);
-    println!("Ghost position: {:?}", current_ghost_position);
     let player_path = find_path(player_position, maze).expect("Player not on a path");
     let ghost_path = find_path(current_ghost_position, maze).expect("Ghost not on a path");
     if player_path == ghost_path {
@@ -221,7 +233,6 @@ pub fn find_shortest_path(
     // If the ghost is already on an intersection, then we must exclude it from the path.
     // This is because the path finding needs to find the paths which the ghost must reach, not the ones it is already on.
     if ghost_path.0 == ghost_path.1 {
-        println!("Ghost is on an intersection, so we must exclude it from the path.");
         shortest_path[1..].to_vec()
     } else {
         shortest_path
@@ -275,35 +286,87 @@ pub fn ghost_movement(
     mut ghosts: Query<(&Ghost, &Transform, &mut Velocity), Without<Player>>,
     maze: Res<Maze>,
 ) {
-    let (player_transform, _player) = player.get_single().unwrap();
-    for (_ghost, ghost_transform, mut ghost_velocity) in ghosts.iter_mut() {
-        let shortest_path = find_shortest_path(
-            (
-                player_transform.translation.x,
-                player_transform.translation.z,
-            ),
-            (ghost_transform.translation.x, ghost_transform.translation.z),
-            &maze,
-        );
-        println!(
-            "{:?}",
-            shortest_path
-                .iter()
-                .map(|index| maze.intersections()[*index].coordinates)
-                .collect::<Vec<_>>()
-        );
-        const SPEED: f32 = 2.5;
-        if shortest_path.is_empty() {
-            // Just head in the direction of the player, since we are on the same path.
-            let direction = player_transform.translation - ghost_transform.translation;
-            ghost_velocity.linvel = direction.normalize() * SPEED;
-        } else {
-            let next_intersection = &maze.intersections()[shortest_path[0]];
-            let direction = (
-                next_intersection.coordinates.0 - ghost_transform.translation.x,
-                next_intersection.coordinates.1 - ghost_transform.translation.z,
+    ghosts
+        .par_iter_mut()
+        .for_each_mut(|(ghost, ghost_transform, mut ghost_velocity)| {
+            let (player_transform, player) = player.get_single().unwrap();
+            let shortest_path = find_shortest_path(
+                match ghost.0 {
+                    GhostType::Blinky => (
+                        player_transform.translation.x,
+                        player_transform.translation.z,
+                    ),
+                    GhostType::Pinky => {
+                        let player_path = find_path(
+                            (
+                                player_transform.translation.x,
+                                player_transform.translation.z,
+                            ),
+                            &maze,
+                        )
+                        .expect("Player not on a path");
+                        let ghost_path = find_path(
+                            (ghost_transform.translation.x, ghost_transform.translation.z),
+                            &maze,
+                        )
+                        .expect("Ghost not on a path");
+                        if player_path == ghost_path {
+                            // We are on their path, so we just try to get to them (essentially what Blinky does all the time).
+                            (
+                                player_transform.translation.x,
+                                player_transform.translation.z,
+                            )
+                        } else {
+                            let path_intersections = (
+                                &maze.intersections()[player_path.0],
+                                &maze.intersections()[player_path.1],
+                            );
+                            match player.current_direction {
+                                crate::Direction::Forward | crate::Direction::Right => (
+                                    path_intersections
+                                        .0
+                                        .coordinates
+                                        .0
+                                        .max(path_intersections.1.coordinates.0),
+                                    path_intersections
+                                        .0
+                                        .coordinates
+                                        .1
+                                        .max(path_intersections.1.coordinates.1),
+                                ),
+                                crate::Direction::Backward | crate::Direction::Left => (
+                                    path_intersections
+                                        .0
+                                        .coordinates
+                                        .0
+                                        .min(path_intersections.1.coordinates.0),
+                                    path_intersections
+                                        .0
+                                        .coordinates
+                                        .1
+                                        .min(path_intersections.1.coordinates.1),
+                                ),
+                            }
+                        }
+                    }
+                    _ => panic!("Only Blinky and Pinky are implemented"),
+                },
+                (ghost_transform.translation.x, ghost_transform.translation.z),
+                &maze,
             );
-            ghost_velocity.linvel = Vec3::new(direction.0, 0.0, direction.1).normalize() * SPEED;
-        }
-    }
+            const SPEED: f32 = 2.0;
+            if shortest_path.is_empty() {
+                // Just head in the direction of the player, since we are on the same path.
+                let direction = player_transform.translation - ghost_transform.translation;
+                ghost_velocity.linvel = direction.normalize() * SPEED;
+            } else {
+                let next_intersection = &maze.intersections()[shortest_path[0]];
+                let direction = (
+                    next_intersection.coordinates.0 - ghost_transform.translation.x,
+                    next_intersection.coordinates.1 - ghost_transform.translation.z,
+                );
+                ghost_velocity.linvel =
+                    Vec3::new(direction.0, 0.0, direction.1).normalize() * SPEED;
+            }
+        });
 }
