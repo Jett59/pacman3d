@@ -17,7 +17,7 @@ fn main() {
         .add_plugins(DefaultPlugins)
         .add_plugins(RapierPhysicsPlugin::<NoUserData>::default())
         .add_systems(Startup, setup_graphics)
-        .add_systems(Update, (player_movement, ghost_movement))
+        .add_systems(Update, (player_movement, ghost_movement, death))
         .run();
 }
 
@@ -220,6 +220,12 @@ fn setup_graphics(
         &mut materials,
         Vec3::new(5.0, HALF_PATH_WIDTH, 20.0),
     );
+    create_ghost(
+        &mut commands,
+        &mut meshes,
+        &mut materials,
+        Vec3::new(-5.0, HALF_PATH_WIDTH, 20.0),
+    );
 }
 
 fn can_go_that_way(intersection: &Intersection, direction: Direction) -> bool {
@@ -291,3 +297,5 @@ fn player_movement(
         transform.rotation = player.current_direction.get_rotation();
     }
 }
+
+fn death(player: Query<Entity, With<Player>>) {}

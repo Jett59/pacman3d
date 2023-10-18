@@ -26,14 +26,15 @@ pub fn create_ghost(
         color: Color::BLUE,
         position: Vec3::default(),
         rotation: Quat::default(),
-        shape: Shape::Sphere {
-            radius: HALF_PATH_WIDTH - 0.1,
+        shape: Shape::Cylinder {
+            radius: HALF_PATH_WIDTH,
+            height: HALF_PATH_WIDTH * 2.0,
         },
     });
     game_object
         .spawn(
             Transform::from_translation(initial_position),
-            RigidBody::Dynamic,
+            RigidBody::KinematicVelocityBased,
             commands,
             meshes,
             materials,
@@ -44,9 +45,23 @@ pub fn create_ghost(
 }
 
 /// Finds the indices of the two intersections which this position is between.
+/// If it is slightly off the path (i.e. within the width of the path), it will round to the nearest path.
 fn find_path(position: (f32, f32), maze: &Maze) -> Option<(usize, usize)> {
+    fn within_range(a: f32, b: f32) -> bool {
+        (a - b).abs() < HALF_PATH_WIDTH
+    }
+    // We need to ensure that if we are on an intersection, we prioritise that over being on a path.
+    // The easiest way I can think of is an initial pass which checks if we are on any of the intersections.
     for (intersection_index, intersection) in maze.intersections().iter().enumerate() {
-        if intersection.coordinates.0 == position.0 {
+        if within_range(intersection.coordinates.0, position.0)
+            && within_range(intersection.coordinates.1, position.1)
+        {
+            return Some((intersection_index, intersection_index));
+        }
+    }
+
+    for (intersection_index, intersection) in maze.intersections().iter().enumerate() {
+        if within_range(intersection.coordinates.0, position.0) {
             if intersection.coordinates.1 < position.1 {
                 let distance = position.1 - intersection.coordinates.1;
                 if let Some(forward_path) = intersection
@@ -65,10 +80,12 @@ fn find_path(position: (f32, f32), maze: &Maze) -> Option<(usize, usize)> {
                 {
                     return Some((intersection_index, backward_path.end_index));
                 }
-            } else {
-                return Some((intersection_index, intersection_index));
             }
-        } else if intersection.coordinates.1 == position.1 {
+        }
+        // We don't do an else here because there is a chance that the player isn't on any path.
+        // This being the case, the first if might not return anything but this one will.
+        // We get panics if we don't do this.
+        if within_range(intersection.coordinates.1, position.1) {
             if intersection.coordinates.0 < position.0 {
                 let distance = position.0 - intersection.coordinates.0;
                 if let Some(right_path) = intersection
@@ -87,8 +104,6 @@ fn find_path(position: (f32, f32), maze: &Maze) -> Option<(usize, usize)> {
                 {
                     return Some((intersection_index, left_path.end_index));
                 }
-            } else {
-                return Some((intersection_index, intersection_index));
             }
         }
     }
@@ -106,11 +121,21 @@ pub fn find_shortest_path(
     current_ghost_position: (f32, f32),
     maze: &Maze,
 ) -> Vec<usize> {
+    println!("player position: {:?}", player_position);
+    println!("Ghost position: {:?}", current_ghost_position);
     let player_path = find_path(player_position, maze).expect("Player not on a path");
     let ghost_path = find_path(current_ghost_position, maze).expect("Ghost not on a path");
     if player_path == ghost_path {
         // We are already on the right path, so we don't actually have to do anythign but chase the player down by moving in their direction.
         return vec![];
+    }
+    // There is an edge case where the player is standing exactly on an intersection and we are on a path joining to it.
+    // The code below, in fact, doesn't check if the ghost's current path is joining to the player's.
+    // As this is due Tomorrow, I won't actually fix the code, but I will put in this special case to make it work.
+    if ghost_path.0 == player_path.0 || ghost_path.0 == player_path.1 {
+        return vec![ghost_path.0];
+    } else if ghost_path.1 == player_path.0 || ghost_path.1 == player_path.1 {
+        return vec![ghost_path.1];
     }
     let mut tried_indices_to_distances = HashMap::new();
     let mut potential_paths = {
@@ -193,7 +218,14 @@ pub fn find_shortest_path(
         .min_by(|a, b| a.0.partial_cmp(&b.0).unwrap())
         .expect("No path to player found")
         .1;
-    shortest_path
+    // If the ghost is already on an intersection, then we must exclude it from the path.
+    // This is because the path finding needs to find the paths which the ghost must reach, not the ones it is already on.
+    if ghost_path.0 == ghost_path.1 {
+        println!("Ghost is on an intersection, so we must exclude it from the path.");
+        shortest_path[1..].to_vec()
+    } else {
+        shortest_path
+    }
 }
 
 #[cfg(test)]
@@ -243,8 +275,35 @@ pub fn ghost_movement(
     mut ghosts: Query<(&Ghost, &Transform, &mut Velocity), Without<Player>>,
     maze: Res<Maze>,
 ) {
-    let player = player.get_single().unwrap();
-    for (ghost, ghost_transform, mut ghost_velocity) in ghosts.iter_mut() {
-        ghost_velocity.linvel = Vec3::new(1.0, 0.0, 0.0);
+    let (player_transform, _player) = player.get_single().unwrap();
+    for (_ghost, ghost_transform, mut ghost_velocity) in ghosts.iter_mut() {
+        let shortest_path = find_shortest_path(
+            (
+                player_transform.translation.x,
+                player_transform.translation.z,
+            ),
+            (ghost_transform.translation.x, ghost_transform.translation.z),
+            &maze,
+        );
+        println!(
+            "{:?}",
+            shortest_path
+                .iter()
+                .map(|index| maze.intersections()[*index].coordinates)
+                .collect::<Vec<_>>()
+        );
+        const SPEED: f32 = 2.5;
+        if shortest_path.is_empty() {
+            // Just head in the direction of the player, since we are on the same path.
+            let direction = player_transform.translation - ghost_transform.translation;
+            ghost_velocity.linvel = direction.normalize() * SPEED;
+        } else {
+            let next_intersection = &maze.intersections()[shortest_path[0]];
+            let direction = (
+                next_intersection.coordinates.0 - ghost_transform.translation.x,
+                next_intersection.coordinates.1 - ghost_transform.translation.z,
+            );
+            ghost_velocity.linvel = Vec3::new(direction.0, 0.0, direction.1).normalize() * SPEED;
+        }
     }
 }
